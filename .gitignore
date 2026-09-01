@@ -1,0 +1,15 @@
+~*
+.*
+__pycache__/
+*.pyc
+coverage.xml
+dist
+build
+uv.lock
+src/hope_bitcaster/version.py
+
+!.github/
+!.pre-commit-config.yaml
+!.gitignore
+!tests/.coveragerc
+!docs/**/.pages

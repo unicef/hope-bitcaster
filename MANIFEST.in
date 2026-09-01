@@ -1,0 +1,7 @@
+include CHANGES.md
+include LICENSE
+include README.md
+include tox.ini
+
+recursive-include src/hope_bitcaster *.html *.png *.gif *js *.css *jpg *jpeg *svg *py
+recursive-include tests *
