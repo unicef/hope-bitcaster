@@ -49,6 +49,7 @@ dev = [
   "pytest-responses>=0.5.1",
   "responses>=0.25.8",
   "tox>=4.29",
+  "tox-uv>=1.25",
 ]
 
 docs = [
@@ -81,10 +82,12 @@ type-check = [
   "types-requests",
 ]
 
-[tool.hatch]
-build.hooks.vcs.version-file = "src/hope_bitcaster/version.py"
-version.source = "vcs"
-raw-options = { root = "../.." }
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.1.0"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/hope_bitcaster/version.py"
 
 [tool.hatch.build.targets.sdist]
 ignore-vcs = true

@@ -19,3 +19,4 @@ BITCASTER_BAE = ""
 BITCASTER_CLIENT_CLASS = "bitcaster_sdk.async_client.AsyncClient"
 BITCASTER_PROJECT_SLUG = "hope"
 BITCASTER_APPLICATION_SLUG = "payment-gateway"
+BITCASTER_USER_ADAPTER = None

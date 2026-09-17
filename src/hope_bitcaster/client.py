@@ -1,4 +1,5 @@
 import logging
+import threading
 from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any
 
@@ -10,6 +11,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from django.contrib.auth.base_user import AbstractBaseUser
 
 logger = logging.getLogger(__name__)
+
+_domain_lock = threading.Lock()
 
 
 class HopeBitcasterClient:
@@ -36,29 +39,70 @@ class HopeBitcasterClient:
     def reset(cls) -> None:
         cls._instance = None
 
+    @staticmethod
+    def _extract_user_metadata(user: "AbstractBaseUser") -> tuple[dict[str, Any], str | None]:
+        adapter_path = getattr(settings, "BITCASTER_USER_ADAPTER", None)
+        if not adapter_path:
+            return {}, None
+        try:
+            adapter = import_string(adapter_path)
+            data = adapter(user) or {}
+            return dict(data.get("custom_fields") or {}), data.get("distribution_list")
+        except Exception:  # noqa: BLE001
+            logger.warning("Bitcaster user adapter %r failed; syncing without metadata", adapter_path, exc_info=True)
+            return {}, None
+
     def register_user(self, user: "AbstractBaseUser") -> None:
-        self._client.register_user(
+        custom_fields, distribution_list = self._extract_user_metadata(user)
+        result = self._client.register_user(
             project=self._project,
             application=self._application,
             username=user.username,
             email=user.email,
             first_name=getattr(user, "first_name", "") or "",
             last_name=getattr(user, "last_name", "") or "",
+            custom_fields=custom_fields,
             active=user.is_active,
             addresses=[{"value": user.email}],
+            distribution_list=distribution_list,
         )
+        if isinstance(result, Future):
+            result.add_done_callback(
+                lambda future: self._log_future_error(f"user registration for '{user.username}'", future)
+            )
 
     def unregister_user(self, username: str) -> None:
-        self._client.unregister_user(
+        result = self._client.unregister_user(
             project=self._project,
             application=self._application,
             username=username,
         )
+        if isinstance(result, Future):
+            result.add_done_callback(
+                lambda future: self._log_future_error(f"user unregistration for '{username}'", future)
+            )
 
-    def trigger_event(self, event_name: str, payload: dict[str, Any]) -> None:
-        result = self._client.trigger_event(event_name, context=payload)
-        if isinstance(result, Future) and result.done() and result.exception():
-            logger.warning("Bitcaster event dropped (queue full): %s", event_name)
+    @staticmethod
+    def _log_future_error(action: str, future: "Future[Any]") -> None:
+        error = future.exception()
+        if error is not None:
+            logger.warning("Bitcaster %s failed: %s", action, error)
+
+    def trigger_event(
+        self,
+        event_name: str,
+        payload: dict[str, Any],
+        *,
+        application: str | None = None,
+        project: str | None = None,
+    ) -> None:
+        target_project = project or self._project
+        target_application = application or self._application
+        with _domain_lock:
+            self._client.set_domain(target_project, target_application)
+            result = self._client.trigger_event(event_name, context=payload)
+        if isinstance(result, Future):
+            result.add_done_callback(lambda future: self._log_future_error(f"event '{event_name}'", future))
 
 
 def get_hope_bitcaster_client() -> "HopeBitcasterClient | None":

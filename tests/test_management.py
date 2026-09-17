@@ -1,55 +1,38 @@
 from io import StringIO
-from unittest.mock import MagicMock, patch
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from factories import UserFactory
+from fakes import RecordingClient
 
-from hope_bitcaster.client import HopeBitcasterClient
 
-
-def test_command_skips_when_not_configured():
+def test_command_skips_when_not_configured(settings):
+    settings.BITCASTER_ENABLED = False
     out = StringIO()
-    with patch("hope_bitcaster.management.commands.sync_bitcaster_users.get_hope_bitcaster_client", return_value=None):
-        call_command("sync_bitcaster_users", stdout=out)
+
+    call_command("sync_bitcaster_users", stdout=out)
 
     assert "skipping" in out.getvalue().lower()
+    assert RecordingClient.instances == []
 
 
 @pytest.mark.django_db
-def test_command_syncs_all_users():
-    from factories import UserFactory
-
+def test_command_syncs_all_users(bitcaster_settings):
     users = [UserFactory() for _ in range(3)]
-    mock_client = MagicMock(spec=HopeBitcasterClient)
 
-    with patch(
-        "hope_bitcaster.management.commands.sync_bitcaster_users.get_hope_bitcaster_client",
-        return_value=mock_client,
-    ):
-        call_command("sync_bitcaster_users")
+    call_command("sync_bitcaster_users")
 
-    from django.contrib.auth import get_user_model
-
-    total = get_user_model().objects.count()
-    assert mock_client.register_user.call_count == total
-    assert mock_client.register_user.call_count >= len(users)
+    registered = RecordingClient.last().registered
+    assert len(registered) == get_user_model().objects.count()
+    assert {call["username"] for call in registered} >= {user.username for user in users}
 
 
 @pytest.mark.django_db
-def test_command_outputs_success_count():
-    from factories import UserFactory
-
+def test_command_outputs_success_count(bitcaster_settings):
     UserFactory.create_batch(4)
     out = StringIO()
-    mock_client = MagicMock(spec=HopeBitcasterClient)
 
-    with patch(
-        "hope_bitcaster.management.commands.sync_bitcaster_users.get_hope_bitcaster_client",
-        return_value=mock_client,
-    ):
-        call_command("sync_bitcaster_users", stdout=out)
+    call_command("sync_bitcaster_users", stdout=out)
 
-    from django.contrib.auth import get_user_model
-
-    total = get_user_model().objects.count()
-    assert str(total) in out.getvalue()
+    assert str(get_user_model().objects.count()) in out.getvalue()

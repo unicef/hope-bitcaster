@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 coverage.xml
+junit.xml
 dist
 build
 uv.lock
