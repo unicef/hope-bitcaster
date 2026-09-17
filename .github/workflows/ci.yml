@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - master
+      - main
+      - release/*
+      - feature/*
+      - bugfix/*
+      - hotfix/*
+  pull_request:
+    branches: [develop, master, main]
+    types: [synchronize, opened, reopened, ready_for_review]
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  changes:
+    name: Detect Changed Files
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      lint: ${{ steps.filter.outputs.lint }}
+      run_tests: ${{ steps.filter.outputs.run_tests }}
+      docs: ${{ steps.filter.outputs.docs }}
+      packaging: ${{ steps.filter.outputs.packaging }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          token: ${{ github.token }}
+          filters: .github/file-filters.yml
+
+  lint:
+    name: Lint (pre-commit & ruff)
+    needs: changes
+    if: needs.changes.outputs.lint == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.14
+      - name: Run lint via Tox
+        run: uv run --with tox-uv tox -e lint
+
+  test:
+    name: Test (Django ${{ matrix.django }})
+    needs: changes
+    if: needs.changes.outputs.run_tests == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        django: [d42, d52, d60]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.14
+      - name: Run test suite via Tox
+        run: uv run --with tox-uv tox -e ${{ matrix.django }}
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.django }}
+          path: coverage.xml
+          retention-days: 7
+
+  packaging:
+    name: Packaging & Hatchling Wheel Check
+    needs: changes
+    if: needs.changes.outputs.packaging == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.14
+      - name: Verify package build and installation via Tox
+        run: uv run --with tox-uv tox -e pkg_meta
+
+  docs:
+    name: Documentation Build
+    needs: changes
+    if: needs.changes.outputs.docs == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.14
+      - name: Build docs via Tox
+        run: uv run --with tox-uv tox -e docs

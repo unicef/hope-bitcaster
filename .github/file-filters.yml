@@ -1,0 +1,36 @@
+dependencies: &dependencies
+  - 'uv.lock'
+  - 'pyproject.toml'
+
+actions: &actions
+  - '.github/**/*'
+
+python: &python
+  - 'src/**'
+  - 'tests/**'
+
+run_tests:
+  - *actions
+  - *python
+  - *dependencies
+  - 'pytest.ini'
+  - 'tox.ini'
+
+lint:
+  - *python
+  - *dependencies
+  - '.pre-commit-config.yaml'
+  - 'ruff.toml'
+  - 'tox.ini'
+
+docs:
+  - 'docs/**/*'
+  - 'mkdocs.yaml'
+  - '.github/workflows/ci.yml'
+  - '.github/file-filters.yml'
+
+packaging:
+  - *python
+  - *dependencies
+  - 'MANIFEST.in'
+  - 'tox.ini'
