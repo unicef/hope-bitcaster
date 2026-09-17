@@ -107,6 +107,55 @@ def test_register_user_with_async_client_does_not_block(bitcaster_settings):
     assert not sdk.last_future.done()
 
 
+@pytest.mark.django_db
+def test_register_user_no_warning_until_future_resolves(bitcaster_settings, caplog):
+    bitcaster_settings.BITCASTER_CLIENT_CLASS = "fakes.FutureRecordingClient"
+    client = get_hope_bitcaster_client()
+    sdk = FutureRecordingClient.last()
+    assert sdk.future is not None
+    user = UserFactory()
+
+    with caplog.at_level(logging.WARNING):
+        client.register_user(user)
+        assert "failed" not in caplog.text
+        sdk.future.set_exception(Exception("later failure"))
+
+    assert f"Bitcaster user registration for '{user.username}' failed" in caplog.text
+    assert "later failure" in caplog.text
+
+
+@pytest.mark.django_db
+def test_register_user_no_warning_on_success(bitcaster_settings, caplog):
+    bitcaster_settings.BITCASTER_CLIENT_CLASS = "fakes.FutureRecordingClient"
+    client = get_hope_bitcaster_client()
+    sdk = FutureRecordingClient.last()
+    user = UserFactory()
+
+    with caplog.at_level(logging.WARNING):
+        client.register_user(user)
+        sdk.future.set_result({"ok": True})
+
+    assert "failed" not in caplog.text
+
+
+@pytest.mark.django_db
+def test_register_user_logs_on_immediate_failure(bitcaster_settings, caplog):
+    bitcaster_settings.BITCASTER_CLIENT_CLASS = "fakes.FutureRecordingClient"
+    client = get_hope_bitcaster_client()
+    sdk = FutureRecordingClient.last()
+
+    failed = Future()
+    failed.set_exception(Exception("queue is full"))
+    sdk.future = failed
+    user = UserFactory()
+
+    with caplog.at_level(logging.WARNING):
+        client.register_user(user)
+
+    assert f"Bitcaster user registration for '{user.username}' failed" in caplog.text
+    assert "queue is full" in caplog.text
+
+
 def test_unregister_user_sends_expected_payload(bitcaster_settings):
     get_hope_bitcaster_client().unregister_user("demo-user")
 
@@ -124,6 +173,49 @@ def test_unregister_user_with_async_client_does_not_block(bitcaster_settings):
     assert sdk.unregistered[0]["username"] == "demo-user"
     assert sdk.last_future is not None
     assert not sdk.last_future.done()
+
+
+def test_unregister_user_no_warning_until_future_resolves(bitcaster_settings, caplog):
+    bitcaster_settings.BITCASTER_CLIENT_CLASS = "fakes.FutureRecordingClient"
+    client = get_hope_bitcaster_client()
+    sdk = FutureRecordingClient.last()
+    assert sdk.future is not None
+
+    with caplog.at_level(logging.WARNING):
+        client.unregister_user("demo-user")
+        assert "failed" not in caplog.text
+        sdk.future.set_exception(Exception("later failure"))
+
+    assert "Bitcaster user unregistration for 'demo-user' failed" in caplog.text
+    assert "later failure" in caplog.text
+
+
+def test_unregister_user_no_warning_on_success(bitcaster_settings, caplog):
+    bitcaster_settings.BITCASTER_CLIENT_CLASS = "fakes.FutureRecordingClient"
+    client = get_hope_bitcaster_client()
+    sdk = FutureRecordingClient.last()
+
+    with caplog.at_level(logging.WARNING):
+        client.unregister_user("demo-user")
+        sdk.future.set_result({"deleted": 1})
+
+    assert "failed" not in caplog.text
+
+
+def test_unregister_user_logs_on_immediate_failure(bitcaster_settings, caplog):
+    bitcaster_settings.BITCASTER_CLIENT_CLASS = "fakes.FutureRecordingClient"
+    client = get_hope_bitcaster_client()
+    sdk = FutureRecordingClient.last()
+
+    failed = Future()
+    failed.set_exception(Exception("queue is full"))
+    sdk.future = failed
+
+    with caplog.at_level(logging.WARNING):
+        client.unregister_user("demo-user")
+
+    assert "Bitcaster user unregistration for 'demo-user' failed" in caplog.text
+    assert "queue is full" in caplog.text
 
 
 def test_trigger_event_calls_sdk_with_default_domain(bitcaster_settings):

@@ -53,6 +53,31 @@ def test_sync_user_is_no_op_for_missing_pk(bitcaster_settings):
     assert RecordingClient.last().registered == []
 
 
+@pytest.mark.django_db
+def test_sync_user_accepts_pk_as_str(bitcaster_settings):
+    user = UserFactory()
+
+    sync_user(str(user.pk))
+
+    assert RecordingClient.last().registered[0]["username"] == user.username
+
+
+@pytest.mark.django_db
+def test_sync_task_accepts_pk_as_str(bitcaster_settings):
+    user = UserFactory()
+
+    sync_user_to_bitcaster(user_pk=str(user.pk))
+
+    assert [call["username"] for call in RecordingClient.last().registered] == [user.username]
+
+
+@pytest.mark.django_db
+def test_sync_user_is_no_op_for_invalid_pk(bitcaster_settings):
+    sync_user("not-a-valid-pk")
+
+    assert RecordingClient.last().registered == []
+
+
 def test_unregister_task_is_no_op_when_client_is_none(settings):
     settings.BITCASTER_ENABLED = False
 

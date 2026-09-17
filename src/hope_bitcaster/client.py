@@ -54,7 +54,7 @@ class HopeBitcasterClient:
 
     def register_user(self, user: "AbstractBaseUser") -> None:
         custom_fields, distribution_list = self._extract_user_metadata(user)
-        self._client.register_user(
+        result = self._client.register_user(
             project=self._project,
             application=self._application,
             username=user.username,
@@ -66,19 +66,27 @@ class HopeBitcasterClient:
             addresses=[{"value": user.email}],
             distribution_list=distribution_list,
         )
+        if isinstance(result, Future):
+            result.add_done_callback(
+                lambda future: self._log_future_error(f"user registration for '{user.username}'", future)
+            )
 
     def unregister_user(self, username: str) -> None:
-        self._client.unregister_user(
+        result = self._client.unregister_user(
             project=self._project,
             application=self._application,
             username=username,
         )
+        if isinstance(result, Future):
+            result.add_done_callback(
+                lambda future: self._log_future_error(f"user unregistration for '{username}'", future)
+            )
 
     @staticmethod
-    def _log_future_error(event_name: str, future: "Future[Any]") -> None:
+    def _log_future_error(action: str, future: "Future[Any]") -> None:
         error = future.exception()
         if error is not None:
-            logger.warning("Bitcaster event '%s' failed: %s", event_name, error)
+            logger.warning("Bitcaster %s failed: %s", action, error)
 
     def trigger_event(
         self,
@@ -94,7 +102,7 @@ class HopeBitcasterClient:
             self._client.set_domain(target_project, target_application)
             result = self._client.trigger_event(event_name, context=payload)
         if isinstance(result, Future):
-            result.add_done_callback(lambda future: self._log_future_error(event_name, future))
+            result.add_done_callback(lambda future: self._log_future_error(f"event '{event_name}'", future))
 
 
 def get_hope_bitcaster_client() -> "HopeBitcasterClient | None":
