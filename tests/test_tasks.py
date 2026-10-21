@@ -1,45 +1,92 @@
-from unittest.mock import MagicMock, patch
-
 import pytest
+from factories import UserFactory
+from fakes import RecordingClient
 
-from hope_bitcaster.client import HopeBitcasterClient
-from hope_bitcaster.tasks import sync_user_to_bitcaster, unregister_user_from_bitcaster
-
-
-def test_sync_task_is_no_op_when_client_is_none():
-    with patch("hope_bitcaster.tasks.get_hope_bitcaster_client", return_value=None):
-        sync_user_to_bitcaster(user_pk=999)
+from hope_bitcaster.tasks import sync_user, sync_user_to_bitcaster, unregister_user_from_bitcaster
 
 
-@pytest.mark.django_db
-def test_sync_task_is_no_op_for_missing_user():
-    mock_client = MagicMock(spec=HopeBitcasterClient)
-    with patch("hope_bitcaster.tasks.get_hope_bitcaster_client", return_value=mock_client):
-        sync_user_to_bitcaster(user_pk=99999)
+def test_sync_task_is_no_op_when_client_is_none(settings):
+    settings.BITCASTER_ENABLED = False
 
-    mock_client.register_user.assert_not_called()
+    sync_user_to_bitcaster(user_pk=999)
+
+    assert RecordingClient.instances == []
 
 
 @pytest.mark.django_db
-def test_sync_task_calls_register_user(bitcaster_settings):
-    from factories import UserFactory
+def test_sync_task_is_no_op_for_missing_user(bitcaster_settings):
+    sync_user_to_bitcaster(user_pk=99999)
 
+    assert RecordingClient.last().registered == []
+
+
+@pytest.mark.django_db
+def test_sync_task_registers_user(bitcaster_settings):
     user = UserFactory()
-    mock_client = MagicMock(spec=HopeBitcasterClient)
-    with patch("hope_bitcaster.tasks.get_hope_bitcaster_client", return_value=mock_client):
-        sync_user_to_bitcaster(user_pk=user.pk)
 
-    mock_client.register_user.assert_called_once_with(user)
+    sync_user_to_bitcaster(user_pk=user.pk)
 
-
-def test_unregister_task_is_no_op_when_client_is_none():
-    with patch("hope_bitcaster.tasks.get_hope_bitcaster_client", return_value=None):
-        unregister_user_from_bitcaster(username="ghost")
+    assert [call["username"] for call in RecordingClient.last().registered] == [user.username]
 
 
-def test_unregister_task_calls_unregister_user():
-    mock_client = MagicMock(spec=HopeBitcasterClient)
-    with patch("hope_bitcaster.tasks.get_hope_bitcaster_client", return_value=mock_client):
-        unregister_user_from_bitcaster(username="ghost")
+@pytest.mark.django_db
+def test_sync_user_accepts_instance(bitcaster_settings):
+    user = UserFactory()
 
-    mock_client.unregister_user.assert_called_once_with("ghost")
+    sync_user(user)
+
+    assert RecordingClient.last().registered[0]["username"] == user.username
+
+
+def test_sync_user_is_no_op_when_client_is_none(settings):
+    settings.BITCASTER_ENABLED = False
+
+    sync_user(999)
+
+    assert RecordingClient.instances == []
+
+
+@pytest.mark.django_db
+def test_sync_user_is_no_op_for_missing_pk(bitcaster_settings):
+    sync_user(99999)
+
+    assert RecordingClient.last().registered == []
+
+
+@pytest.mark.django_db
+def test_sync_user_accepts_pk_as_str(bitcaster_settings):
+    user = UserFactory()
+
+    sync_user(str(user.pk))
+
+    assert RecordingClient.last().registered[0]["username"] == user.username
+
+
+@pytest.mark.django_db
+def test_sync_task_accepts_pk_as_str(bitcaster_settings):
+    user = UserFactory()
+
+    sync_user_to_bitcaster(user_pk=str(user.pk))
+
+    assert [call["username"] for call in RecordingClient.last().registered] == [user.username]
+
+
+@pytest.mark.django_db
+def test_sync_user_is_no_op_for_invalid_pk(bitcaster_settings):
+    sync_user("not-a-valid-pk")
+
+    assert RecordingClient.last().registered == []
+
+
+def test_unregister_task_is_no_op_when_client_is_none(settings):
+    settings.BITCASTER_ENABLED = False
+
+    unregister_user_from_bitcaster(username="ghost")
+
+    assert RecordingClient.instances == []
+
+
+def test_unregister_task_unregisters_user(bitcaster_settings):
+    unregister_user_from_bitcaster(username="ghost")
+
+    assert RecordingClient.last().unregistered == [{"project": "project", "application": "app", "username": "ghost"}]

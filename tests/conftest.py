@@ -18,11 +18,14 @@ def skip_if_django_version(v):
 
 @pytest.fixture(autouse=True)
 def reset_bitcaster_singleton():
+    from fakes import RecordingClient
     from hope_bitcaster.client import HopeBitcasterClient
 
     HopeBitcasterClient.reset()
+    RecordingClient.reset()
     yield
     HopeBitcasterClient.reset()
+    RecordingClient.reset()
 
 
 @pytest.fixture
@@ -31,4 +34,6 @@ def bitcaster_settings(settings):
     settings.BITCASTER_BAE = "https://testkey@bitcaster.example.com/api/o/org/"
     settings.BITCASTER_PROJECT_SLUG = "project"
     settings.BITCASTER_APPLICATION_SLUG = "app"
+    settings.BITCASTER_CLIENT_CLASS = "fakes.RecordingClient"
+    settings.BITCASTER_USER_ADAPTER = None
     return settings
